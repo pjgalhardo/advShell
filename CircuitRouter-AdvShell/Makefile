@@ -9,7 +9,7 @@ CFLAGS =-Wall -std=gnu99 -I../
 LDFLAGS=-lm
 TARGET = CircuitRouter-AdvShell
 
-all: $(TARGET) CircuitRouter-SeqSolver
+all: $(TARGET) CircuitRouter-SeqSolver CircuitRouter-Client
 
 $(TARGET): $(OBJS)
 	$(CC) $(CFLAGS) $^ -o $(TARGET) $(LDFLAGS) 
@@ -17,6 +17,12 @@ $(TARGET): $(OBJS)
 CircuitRouter-AdvShell.o: CircuitRouter-AdvShell.c CircuitRouter-AdvShell.h ../lib/commandlinereader.h ../lib/vector.h
 ../lib/commandlinereader.o: ../lib/commandlinereader.c ../lib/commandlinereader.h
 ../lib/vector.o: ../lib/vector.c ../lib/vector.h ../lib/types.h ../lib/utility.h
+
+CircuitRouter-Client: CircuitRouter-Client.o
+	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
+
+CircuitRouter-Client.o: CircuitRouter-Client.c
+	$(CC) $(CFLAGS) -c -o $@ $<
 
 $(OBJS):
 	$(CC) $(CFLAGS) -c -o $@ $<
@@ -27,4 +33,5 @@ CircuitRouter-SeqSolver:
 clean:
 	@echo Cleaning...
 	rm -f $(OBJS) $(TARGET)
+	rm -f *Client.o *Client 
 	(cd ../CircuitRouter-SeqSolver/ && make clean) 
