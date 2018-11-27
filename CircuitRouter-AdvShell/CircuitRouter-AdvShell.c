@@ -144,6 +144,7 @@ int main (int argc, char** argv) {
         free(vector_at(children, i));
     }
     vector_free(children);
-
+    
+    printf("Ola\n");
     return EXIT_SUCCESS;
 }
