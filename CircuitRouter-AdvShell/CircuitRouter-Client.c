@@ -6,31 +6,30 @@
 #include <unistd.h>
 #include <stdlib.h>
 
-#define MAXFILEPATH 256
+#define BUFFER_SIZE 100
 
 int main(int argc, char* argv[]) {
     
     int fclient;
-    
     if (argc != 2) {
         perror("Wrong number of arguments.\n");
         exit(-1);
     }
     else {
-        char* filePath = (char*)malloc(MAXFILEPATH);
+        char* filePath = (char*)malloc(sizeof(char) * BUFFER_SIZE);
         strcpy(filePath, argv[1]);
         strcat(filePath, ".pipe");
         
         mkfifo(filePath, 0777);
 
-        char* command = (char*)malloc(MAXFILEPATH);
-        
-
+        char* command = (char*)malloc(sizeof(char) * BUFFER_SIZE);
         while (1) {
             fclient = open(filePath, O_WRONLY);
-            fgets(command, MAXFILEPATH, stdin);
-            
-            write(fclient, command, strlen(command) + 1);
+            if (fclient == -1){
+                perror("FAILED CREATING FIFO.\n");
+            }
+            fgets(command, BUFFER_SIZE, stdin);
+            write(fclient, command, BUFFER_SIZE);
             close(fclient);
 
 

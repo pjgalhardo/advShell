@@ -9,6 +9,7 @@
 #include "CircuitRouter-AdvShell.h"
 #include <stdio.h>
 #include <sys/types.h>
+#include <fcntl.h> 
 #include <sys/wait.h>
 #include <stdlib.h>
 #include <string.h>
@@ -65,11 +66,14 @@ void printChildren(vector_t *children) {
 
 int main (int argc, char** argv) {
 
+
     char *args[MAXARGS + 1];
     char buffer[BUFFER_SIZE];
+    char commandpipe[BUFFER_SIZE];
     int MAXCHILDREN = -1;
     vector_t *children;
     int runningChildren = 0;
+    int fserv, fcli;
 
     if(argv[1] != NULL){
         MAXCHILDREN = atoi(argv[1]);
@@ -80,7 +84,28 @@ int main (int argc, char** argv) {
 
     printf("Welcome to CircuitRouter-SimpleShell\n\n");
 
+
+    /*  CRIACAO DO FIFO   */
+
+    char* fServPath = (char*)malloc(sizeof(char) * BUFFER_SIZE);
+    strcpy(fServPath, argv[0]);
+    strcat(fServPath, ".pipe");
+
+    unlink(fServPath);
+
+    if (mkfifo(fServPath, 0777) < 0) {
+        exit(-1);
+    }
+
+    if (fserv = open(fServPath, O_RDONLY) == -1) {
+        exit(-1);
+        
+    }
+    
     while (1) {
+        
+        read(fserv, commandpipe, BUFFER_SIZE);
+
         int numArgs;
 
         numArgs = readLineArguments(args, MAXARGS+1, buffer, BUFFER_SIZE);
@@ -139,6 +164,10 @@ int main (int argc, char** argv) {
             printf("Unknown command. Try again.\n");
 
     }
+
+    close(fserv);
+    unlink(fServPath);
+    free(fServPath);
 
     for (int i = 0; i < vector_getSize(children); i++) {
         free(vector_at(children, i));
