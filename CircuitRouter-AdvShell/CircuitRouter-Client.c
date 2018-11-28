@@ -19,8 +19,6 @@ int main(int argc, char* argv[]) {
         char* filePath = (char*)malloc(sizeof(char) * BUFFER_SIZE);
         strcpy(filePath, argv[1]);
         strcat(filePath, ".pipe");
-        
-        mkfifo(filePath, 0777);
 
         char* command = (char*)malloc(sizeof(char) * BUFFER_SIZE);
         while (1) {

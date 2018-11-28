@@ -34,4 +34,5 @@ clean:
 	@echo Cleaning...
 	rm -f $(OBJS) $(TARGET)
 	rm -f *Client.o *Client 
+	rm -f *.pipe
 	(cd ../CircuitRouter-SeqSolver/ && make clean) 
