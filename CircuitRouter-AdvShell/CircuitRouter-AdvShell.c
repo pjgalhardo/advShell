@@ -20,12 +20,70 @@
 #include <sys/stat.h>
 #include <sys/select.h>
 #include <sys/time.h>
+#include "lib/timer.h"
 
 #define COMMAND_EXIT "exit"
 #define COMMAND_RUN "run"
 
 #define MAXARGS 3
 #define BUFFER_SIZE 100
+
+vector_t *stopTimes;
+vector_t *startTimes;
+vector_t *children;
+
+int runningChildren = 0;
+
+struct timestruct
+{
+    pid_t pid;
+    TIMER_T time;
+};
+
+void readTime(vector_t *times, pid_t pid)
+{
+
+    struct timestruct *timer = malloc(sizeof(struct timestruct));
+    TIMER_READ(timer->time);
+    timer->pid = pid;
+    vector_pushBack(times, timer);
+}
+
+void freeTime(vector_t *times)
+{
+    for (int i = 0; i < vector_getSize(times); ++i)
+    {
+        free(vector_at(times, i));
+    }
+    vector_free(times);
+}
+
+float printTime(pid_t pid)
+{
+    TIMER_T timestarted;
+    int check = 00;
+    TIMER_T timestopped;
+
+    for (int i = 0; i < vector_getSize(startTimes); ++i)
+    {
+        struct timestruct *startTime = (struct timestruct *)vector_at(startTimes, i);
+        if (startTime->pid == pid)
+        {
+            timestarted = startTime->time;
+            check += 10;
+        }
+    }
+    for (int i = 0; i < vector_getSize(stopTimes); ++i)
+    {
+        struct timestruct *stopTime = (struct timestruct *)vector_at(stopTimes, i);
+        if (stopTime->pid == pid)
+        {
+            timestopped = stopTime->time;
+            check += 1;
+        }
+    }
+    return TIMER_DIFF_SECONDS(timestarted, timestopped);
+}
 
 void waitForChild(vector_t *children)
 {
@@ -53,6 +111,7 @@ void waitForChild(vector_t *children)
                 exit(EXIT_FAILURE);
             }
         }
+        readTime(stopTimes, child->pid);
         vector_pushBack(children, child);
         return;
     }
@@ -72,10 +131,16 @@ void printChildren(vector_t *children)
             {
                 ret = "OK";
             }
-            printf("CHILD EXITED: (PID=%d; return %s)\n", pid, ret);
+            printf("CHILD EXITED: (PID=%d; return %s; %d s)\n", pid, ret, (int)printTime(pid));
         }
     }
     puts("END.");
+}
+
+void sigchld_handler(int sig, siginfo_t *siginfo, void *x)
+{
+    waitForChild(children);
+    runningChildren--;
 }
 
 int main(int argc, char **argv)
@@ -84,8 +149,6 @@ int main(int argc, char **argv)
     char *args[MAXARGS + 1];
     char bufferClient[BUFFER_SIZE], bufferShell[BUFFER_SIZE];
     int MAXCHILDREN = -1;
-    vector_t *children;
-    int runningChildren = 0;
     int fserv, sret;
     fd_set readfds;
     fd_set s_rd;
@@ -97,6 +160,8 @@ int main(int argc, char **argv)
     }
 
     children = vector_alloc(MAXCHILDREN);
+    startTimes = vector_alloc(MAXCHILDREN);
+    stopTimes = vector_alloc(MAXCHILDREN);
 
     printf("Welcome to CircuitRouter-AdvShell\n\n");
 
@@ -117,7 +182,6 @@ int main(int argc, char **argv)
     {
         exit(-1);
     }
-
     while (1)
     {
         sret = 0;
@@ -148,7 +212,6 @@ int main(int argc, char **argv)
                 }
             }
         }
-
         int numArgs;
 
         if (strcmp(bufferClient, "") == 0)
@@ -190,6 +253,12 @@ int main(int argc, char **argv)
                 runningChildren--;
             }
 
+            struct sigaction act;
+
+            memset(&act, 0, sizeof(act));
+            act.sa_sigaction = &sigchld_handler;
+            act.sa_flags = SA_RESTART;
+            sigaction(SIGCHLD, &act, 0);
             pid = fork();
             if (pid < 0)
             {
@@ -199,6 +268,7 @@ int main(int argc, char **argv)
 
             if (pid > 0)
             {
+                readTime(startTimes, pid);
                 runningChildren++;
                 printf("%s: background child started with PID %d.\n\n", COMMAND_RUN, pid);
                 continue;
@@ -237,6 +307,8 @@ int main(int argc, char **argv)
         free(vector_at(children, i));
     }
     vector_free(children);
+    freeTime(startTimes);
+    freeTime(stopTimes);
 
     return EXIT_SUCCESS;
 }
