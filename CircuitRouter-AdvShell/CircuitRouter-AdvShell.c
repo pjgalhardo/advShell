@@ -27,6 +27,25 @@
 #define MAXARGS 3
 #define BUFFER_SIZE 100
 
+int clientRequest(char *buffer)
+{
+
+    return !(strcmp(buffer, "") == 0);
+}
+
+void deleteExistentPipes()
+{
+    //FIXME: nao sei se gosto de como esta
+    int i;
+    char fileReturn[BUFFER_SIZE];
+    strcpy(fileReturn, "1.pipe");
+    for (i = 2; access(fileReturn, F_OK) != -1; i++)
+    {
+        remove(fileReturn);
+        sprintf(fileReturn, "%d.pipe", i);
+    }
+}
+
 void waitForChild(vector_t *children)
 {
     while (1)
@@ -82,11 +101,11 @@ int main(int argc, char **argv)
 {
 
     char *args[MAXARGS + 1];
-    char bufferClient[BUFFER_SIZE], bufferShell[BUFFER_SIZE];
+    char bufferClient[BUFFER_SIZE], bufferShell[BUFFER_SIZE], clientPipe[BUFFER_SIZE];
     int MAXCHILDREN = -1;
     vector_t *children;
     int runningChildren = 0;
-    int fserv, sret;
+    int fserv, sret, j, i, fanswer;
     fd_set readfds;
     fd_set s_rd;
     struct timeval timeout;
@@ -97,7 +116,7 @@ int main(int argc, char **argv)
     }
 
     children = vector_alloc(MAXCHILDREN);
-
+    deleteExistentPipes();
     printf("Welcome to CircuitRouter-AdvShell\n\n");
 
     /*  CRIACAO DO FIFO   */
@@ -113,7 +132,7 @@ int main(int argc, char **argv)
         exit(-1);
     }
 
-    if (((fserv = open(fServPath, O_RDONLY)) == -1))
+    if (((fserv = open(fServPath, O_RDWR)) == -1))
     {
         exit(-1);
     }
@@ -132,10 +151,22 @@ int main(int argc, char **argv)
             FD_SET(fileno(stdin), &s_rd);
             timeout.tv_sec = 0;
             timeout.tv_usec = 100000;
-
             if ((sret = select(8, &readfds, NULL, NULL, &timeout)) == 1)
             {
+                //FIXME: fazer numa funcao
                 read(fserv, bufferClient, BUFFER_SIZE);
+                strcpy(clientPipe, "");
+                char tempBuffer[BUFFER_SIZE];
+                for (i = 0; bufferClient[i] != '\n'; i++)
+                {
+                    clientPipe[i] = bufferClient[i];
+                }
+                i++;
+                for (j = 0; i < BUFFER_SIZE; i++, j++)
+                {
+                    tempBuffer[j] = bufferClient[i];
+                }
+                strcpy(bufferClient, tempBuffer);
             }
 
             else
@@ -151,7 +182,7 @@ int main(int argc, char **argv)
 
         int numArgs;
 
-        if (strcmp(bufferClient, "") == 0)
+        if (!clientRequest(bufferClient))
         {
             numArgs = readLineArguments(args, MAXARGS + 1, bufferShell, BUFFER_SIZE);
         }
@@ -160,7 +191,7 @@ int main(int argc, char **argv)
             numArgs = readLineArguments(args, MAXARGS + 1, bufferClient, BUFFER_SIZE);
         }
         /* EOF (end of file) do stdin ou comando "sair" */
-        if ((strcmp(bufferClient, "") == 0) && (numArgs < 0 || (numArgs > 0 && (strcmp(args[0], COMMAND_EXIT) == 0))))
+        if (!clientRequest(bufferClient) && (numArgs < 0 || (numArgs > 0 && (strcmp(args[0], COMMAND_EXIT) == 0))))
         {
             printf("CircuitRouter-AdvShell will exit.\n--\n");
 
@@ -206,9 +237,17 @@ int main(int argc, char **argv)
             else
             {
                 char seqsolver[] = "../CircuitRouter-SeqSolver/CircuitRouter-SeqSolver";
-                char *newArgs[3] = {seqsolver, args[1], NULL};
+                if (clientRequest(bufferClient))
+                {
+                    char *newArgs[4] = {seqsolver, args[1], clientPipe, NULL};
+                    execv(seqsolver, newArgs);
+                }
+                else
+                {
+                    char *newArgs[3] = {seqsolver, args[1], NULL};
+                    execv(seqsolver, newArgs);
+                }
 
-                execv(seqsolver, newArgs);
                 perror("Error while executing child process"); // Nao deveria chegar aqui
                 exit(EXIT_FAILURE);
             }
@@ -219,9 +258,11 @@ int main(int argc, char **argv)
             /* Nenhum argumento; ignora e volta a pedir */
             continue;
         }
-        else if ((strcmp(bufferClient, "") != 0))
+        else if (clientRequest(bufferClient))
         {
-            printf("Command not supported.\n");
+            fanswer = open(clientPipe, O_WRONLY);
+            write(fanswer, "Command not supported.\n", BUFFER_SIZE);
+            close(fanswer);
         }
         else
             printf("Unknown command. Try again.\n");
@@ -237,6 +278,7 @@ int main(int argc, char **argv)
         free(vector_at(children, i));
     }
     vector_free(children);
+    deleteExistentPipes();
 
     return EXIT_SUCCESS;
 }
