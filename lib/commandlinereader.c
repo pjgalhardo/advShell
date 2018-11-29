@@ -33,9 +33,10 @@ int readLineArguments(char **argVector, int vectorSize, char *buffer, int buffer
   char *token;
 
   if (argVector == NULL || buffer == NULL || vectorSize <= 0 || bufferSize <= 0)
-     return 0;
+    return 0;
 
-  if (fgets(buffer, bufferSize, stdin) == NULL) {
+  if (buffer == NULL)
+  {
     return -1;
   }
 
@@ -43,17 +44,18 @@ int readLineArguments(char **argVector, int vectorSize, char *buffer, int buffer
   token = strtok(buffer, s);
 
   /* walk through other tokens */
-  while( numTokens < vectorSize-1 && token != NULL ) {
+  while (numTokens < vectorSize - 1 && token != NULL)
+  {
     argVector[numTokens] = token;
-    numTokens ++;
+    numTokens++;
 
     token = strtok(NULL, s);
   }
 
-  for (i = numTokens; i<vectorSize; i++) {
+  for (i = numTokens; i < vectorSize; i++)
+  {
     argVector[i] = NULL;
   }
 
   return numTokens;
 }
-

@@ -82,14 +82,13 @@ int main(int argc, char **argv)
 {
 
     char *args[MAXARGS + 1];
-    char buffer[BUFFER_SIZE];
-    char commandpipe[BUFFER_SIZE];
+    char bufferClient[BUFFER_SIZE], bufferShell[BUFFER_SIZE];
     int MAXCHILDREN = -1;
     vector_t *children;
     int runningChildren = 0;
-    int fserv, fcli, sret;
+    int fserv, sret;
     fd_set readfds;
-    fd_set s_rd, s_wr, s_ex;
+    fd_set s_rd;
     struct timeval timeout;
 
     if (argv[1] != NULL)
@@ -99,7 +98,7 @@ int main(int argc, char **argv)
 
     children = vector_alloc(MAXCHILDREN);
 
-    printf("Welcome to CircuitRouter-SimpleShell\n\n");
+    printf("Welcome to CircuitRouter-AdvShell\n\n");
 
     /*  CRIACAO DO FIFO   */
 
@@ -121,78 +120,91 @@ int main(int argc, char **argv)
 
     while (1)
     {
+        sret = 0;
+        memset(bufferClient, 0, sizeof(bufferClient));
+        memset(bufferShell, 0, sizeof(bufferShell));
 
-        FD_ZERO(&readfds);
-        FD_SET(fserv, &readfds);
-        FD_ZERO(&s_rd);
-        FD_ZERO(&s_wr);
-        FD_ZERO(&s_ex);
-        FD_SET(fileno(stdin), &s_rd);
-        timeout.tv_sec = 5;
-        timeout.tv_usec = 0;
-
-        if ((sret = select(8, &readfds, NULL, NULL, &timeout)) == 1)
+        while (sret == 0)
         {
-            read(fserv, commandpipe, BUFFER_SIZE);
-        }
+            FD_ZERO(&readfds);
+            FD_SET(fserv, &readfds);
+            FD_ZERO(&s_rd);
+            FD_SET(fileno(stdin), &s_rd);
+            timeout.tv_sec = 0;
+            timeout.tv_usec = 100000;
 
-        else
-        {
-            timeout.tv_sec = 5;
-            timeout.tv_usec = 0;
-            if ((sret = select(fileno(stdin) + 1, &s_rd, &s_wr, &s_ex, &timeout)) == 1)
+            if ((sret = select(8, &readfds, NULL, NULL, &timeout)) == 1)
             {
-                fgets(commandpipe, BUFFER_SIZE, stdin);
+                read(fserv, bufferClient, BUFFER_SIZE);
             }
+
             else
             {
-                printf("no input\n");
+                timeout.tv_sec = 0;
+                timeout.tv_usec = 100000;
+                if ((sret = select(fileno(stdin) + 1, &s_rd, NULL, NULL, &timeout)) == 1)
+                {
+                    fgets(bufferShell, BUFFER_SIZE, stdin);
+                }
             }
         }
 
-        printf("%s\n", commandpipe);
+        int numArgs;
 
-        /*int numArgs;
-
-        numArgs = readLineArguments(args, MAXARGS+1, buffer, BUFFER_SIZE);
-
+        if (strcmp(bufferClient, "") == 0)
+        {
+            numArgs = readLineArguments(args, MAXARGS + 1, bufferShell, BUFFER_SIZE);
+        }
+        else
+        {
+            numArgs = readLineArguments(args, MAXARGS + 1, bufferClient, BUFFER_SIZE);
+        }
         /* EOF (end of file) do stdin ou comando "sair" */
-        /*if (numArgs < 0 || (numArgs > 0 && (strcmp(args[0], COMMAND_EXIT) == 0))) {
-            printf("CircuitRouter-SimpleShell will exit.\n--\n");
+        if ((strcmp(bufferClient, "") == 0) && (numArgs < 0 || (numArgs > 0 && (strcmp(args[0], COMMAND_EXIT) == 0))))
+        {
+            printf("CircuitRouter-AdvShell will exit.\n--\n");
 
             /* Espera pela terminacao de cada filho */
-        /*  while (runningChildren > 0) {
+            while (runningChildren > 0)
+            {
                 waitForChild(children);
-                runningChildren --;
+                runningChildren--;
             }
 
             printChildren(children);
-            printf("--\nCircuitRouter-SimpleShell ended.\n");
+            printf("--\nCircuitRouter-AdvShell ended.\n");
             break;
         }
 
-        else if (numArgs > 0 && strcmp(args[0], COMMAND_RUN) == 0){
+        else if (numArgs > 0 && strcmp(args[0], COMMAND_RUN) == 0)
+        {
             int pid;
-            if (numArgs < 2) {
+            if (numArgs < 2)
+            {
                 printf("%s: invalid syntax. Try again.\n", COMMAND_RUN);
                 continue;
             }
-            if (MAXCHILDREN != -1 && runningChildren >= MAXCHILDREN) {
+            if (MAXCHILDREN != -1 && runningChildren >= MAXCHILDREN)
+            {
                 waitForChild(children);
                 runningChildren--;
             }
 
             pid = fork();
-            if (pid < 0) {
+            if (pid < 0)
+            {
                 perror("Failed to create new process.");
                 exit(EXIT_FAILURE);
             }
 
-            if (pid > 0) {
+            if (pid > 0)
+            {
                 runningChildren++;
                 printf("%s: background child started with PID %d.\n\n", COMMAND_RUN, pid);
                 continue;
-            } else {
+            }
+            else
+            {
                 char seqsolver[] = "../CircuitRouter-SeqSolver/CircuitRouter-SeqSolver";
                 char *newArgs[3] = {seqsolver, args[1], NULL};
 
@@ -202,23 +214,29 @@ int main(int argc, char **argv)
             }
         }
 
-        else if (numArgs == 0){
+        else if (numArgs == 0)
+        {
             /* Nenhum argumento; ignora e volta a pedir */
-        /*            continue;
+            continue;
+        }
+        else if ((strcmp(bufferClient, "") != 0))
+        {
+            printf("Command not supported.\n");
         }
         else
             printf("Unknown command. Try again.\n");
-*/
     }
 
     close(fserv);
     unlink(fServPath);
+    fServPath -= 2;
     free(fServPath);
-    /*
-    for (int i = 0; i < vector_getSize(children); i++) {
+
+    for (int i = 0; i < vector_getSize(children); i++)
+    {
         free(vector_at(children, i));
     }
-    vector_free(children);*/
+    vector_free(children);
 
     return EXIT_SUCCESS;
 }
