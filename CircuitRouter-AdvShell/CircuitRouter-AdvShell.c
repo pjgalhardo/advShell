@@ -10,7 +10,6 @@
 #include <signal.h>
 #include <limits.h>
 #include <unistd.h>
-#include <stdbool.h>
 #include <errno.h>
 #include <sys/stat.h>
 #include <sys/select.h>
@@ -28,7 +27,6 @@ vector_t *startTimes;
 vector_t *children;
 
 int runningChildren = 0;
-bool waiting = FALSE;
 
 struct timestruct
 {
@@ -39,6 +37,11 @@ struct timestruct
 void readTime(vector_t *times, pid_t pid)
 {
     struct timestruct *timer = malloc(sizeof(struct timestruct));
+    if (timer == NULL)
+    {
+        perror("Error allocating memory");
+        exit(EXIT_FAILURE);
+    }
     TIMER_READ(timer->time);
     timer->pid = pid;
     vector_pushBack(times, timer);
@@ -79,7 +82,6 @@ float printTime(pid_t pid)
 
 void waitForChild(vector_t *children)
 {
-    waiting = TRUE;
     while (1)
     {
         child_t *child = malloc(sizeof(child_t));
@@ -106,7 +108,6 @@ void waitForChild(vector_t *children)
         }
         readTime(stopTimes, child->pid);
         vector_pushBack(children, child);
-        waiting = FALSE;
         return;
     }
 }
@@ -133,11 +134,8 @@ void printChildren(vector_t *children)
 
 void sigchld_handler(int sig, siginfo_t *siginfo, void *x)
 {
-    if (!waiting)
-    {
-        runningChildren--;
-        waitForChild(children);
-    }
+    runningChildren--;
+    waitForChild(children);
 }
 
 int main(int argc, char **argv)
@@ -227,8 +225,7 @@ int main(int argc, char **argv)
             /* Espera pela terminacao de cada filho */
             while (runningChildren > 0)
             {
-                waitForChild(children);
-                runningChildren--;
+                //runningChildren e atualizado pela captura de SIGCHILD
             }
 
             printChildren(children);
@@ -244,10 +241,12 @@ int main(int argc, char **argv)
                 printf("%s: invalid syntax. Try again.\n", COMMAND_RUN);
                 continue;
             }
-            if (MAXCHILDREN != -1 && runningChildren >= MAXCHILDREN)
+            if (MAXCHILDREN != -1)
             {
-                waitForChild(children);
-                runningChildren--;
+                while (runningChildren >= MAXCHILDREN)
+                {
+                    //runningChildren e atualizado pela captura de SIGCHILD
+                }
             }
 
             struct sigaction act;
