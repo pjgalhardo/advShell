@@ -56,7 +56,6 @@ void writeToFIFO(char *path, char *buffer, int size)
 
 void deleteExistentPipes()
 {
-    //FIXME: nao sei se gosto de como esta
     int i;
     char fileReturn[BUFFER_SIZE];
     strcpy(fileReturn, "1.pipe");
@@ -273,7 +272,6 @@ int main(int argc, char **argv)
             resetFlags(fserv, &readfds);
             if ((selectRet = select(MAX(fileno(stdin), fserv) + 1, &readfds, NULL, NULL, NULL)) == 1)
             {
-                //FIXME: fazer numa funcao
                 if (clientFlag(fserv, &readfds))
                 {
                     readFIFO(&fserv, bufferClient, clientPipe);
