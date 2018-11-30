@@ -9,6 +9,7 @@
 #include <string.h>
 #include <signal.h>
 #include <limits.h>
+#include <pthread.h>
 #include <unistd.h>
 #include <errno.h>
 #include <sys/stat.h>
@@ -264,7 +265,18 @@ int main(int argc, char **argv)
 
             if (pid > 0)
             {
+                pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER; //Mutex implementado para prevenir erros com o malloc do readTime caso ocorra o signal sigchild
+                if (pthread_mutex_lock(&mutex) != 0)
+                {
+                    perror("Mutex locking error.");
+                    exit(EXIT_FAILURE);
+                }
                 readTime(startTimes, pid);
+                if (pthread_mutex_unlock(&mutex) != 0)
+                {
+                    perror("Mutex unlocking error.");
+                    exit(EXIT_FAILURE);
+                }
                 runningChildren++;
                 printf("%s: background child started with PID %d.\n\n", COMMAND_RUN, pid);
                 continue;
