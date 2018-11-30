@@ -1,9 +1,3 @@
-
-/*
-// Projeto SO - exercise 1, version 1
-// Sistemas Operativos, DEI/IST/ULisboa 2018-19
-*/
-
 #include "lib/commandlinereader.h"
 #include "lib/vector.h"
 #include "CircuitRouter-AdvShell.h"
@@ -15,18 +9,26 @@
 #include <string.h>
 #include <signal.h>
 #include <limits.h>
+#include <pthread.h>
 #include <unistd.h>
 #include <errno.h>
 #include <sys/stat.h>
 #include <sys/select.h>
 #include <sys/time.h>
 #include "lib/utility.h"
+#include "lib/timer.h"
 
 #define COMMAND_EXIT "exit"
 #define COMMAND_RUN "run"
 
 #define MAXARGS 3
 #define BUFFER_SIZE 100
+
+vector_t *stopTimes;
+vector_t *startTimes;
+vector_t *children;
+
+int runningChildren = 0;
 
 int clientRequest(char *buffer)
 {
@@ -69,6 +71,57 @@ void deleteExistentPipes()
         sprintf(fileReturn, "%d.pipe", i);
     }
 }
+struct timestruct
+{
+    pid_t pid;
+    TIMER_T time;
+};
+
+void readTime(vector_t *times, pid_t pid)
+{
+    struct timestruct *timer = malloc(sizeof(struct timestruct));
+    if (timer == NULL)
+    {
+        perror("Error allocating memory");
+        exit(EXIT_FAILURE);
+    }
+    TIMER_READ(timer->time);
+    timer->pid = pid;
+    vector_pushBack(times, timer);
+}
+
+void freeTime(vector_t *times)
+{
+    for (int i = 0; i < vector_getSize(times); ++i)
+    {
+        free(vector_at(times, i));
+    }
+    vector_free(times);
+}
+
+float printTime(pid_t pid)
+{
+    TIMER_T timestarted;
+    TIMER_T timestopped;
+
+    for (int i = 0; i < vector_getSize(startTimes); ++i)
+    {
+        struct timestruct *startTime = (struct timestruct *)vector_at(startTimes, i);
+        if (startTime->pid == pid)
+        {
+            timestarted = startTime->time;
+        }
+    }
+    for (int i = 0; i < vector_getSize(stopTimes); ++i)
+    {
+        struct timestruct *stopTime = (struct timestruct *)vector_at(stopTimes, i);
+        if (stopTime->pid == pid)
+        {
+            timestopped = stopTime->time;
+        }
+    }
+    return TIMER_DIFF_SECONDS(timestarted, timestopped);
+}
 
 void waitForChild(vector_t *children)
 {
@@ -96,6 +149,7 @@ void waitForChild(vector_t *children)
                 exit(EXIT_FAILURE);
             }
         }
+        readTime(stopTimes, child->pid);
         vector_pushBack(children, child);
         return;
     }
@@ -115,10 +169,16 @@ void printChildren(vector_t *children)
             {
                 ret = "OK";
             }
-            printf("CHILD EXITED: (PID=%d; return %s)\n", pid, ret);
+            printf("CHILD EXITED: (PID=%d; return %s; %d s)\n", pid, ret, (int)printTime(pid));
         }
     }
     puts("END.");
+}
+
+void sigchld_handler(int sig, siginfo_t *siginfo, void *x)
+{
+    runningChildren--;
+    waitForChild(children);
 }
 
 void openFIFO(char *filePath, char *arg, int *fserv)
@@ -162,11 +222,8 @@ int main(int argc, char **argv)
     char *args[MAXARGS + 1];
     char bufferClient[BUFFER_SIZE], bufferShell[BUFFER_SIZE], clientPipe[BUFFER_SIZE];
     int MAXCHILDREN = -1;
-    vector_t *children;
-    int runningChildren = 0;
     int fserv, selectRet, j, i;
     fd_set readfds;
-    struct timeval timeout;
 
     if (argv[1] != NULL)
     {
@@ -174,6 +231,8 @@ int main(int argc, char **argv)
     }
 
     children = vector_alloc(MAXCHILDREN);
+    startTimes = vector_alloc(MAXCHILDREN);
+    stopTimes = vector_alloc(MAXCHILDREN);
     deleteExistentPipes();
     printf("Welcome to CircuitRouter-AdvShell\n\n");
 
@@ -214,7 +273,6 @@ int main(int argc, char **argv)
                 }
             }
         }
-
         int numArgs;
 
         if (!clientRequest(bufferClient))
@@ -233,8 +291,7 @@ int main(int argc, char **argv)
             /* Espera pela terminacao de cada filho */
             while (runningChildren > 0)
             {
-                waitForChild(children);
-                runningChildren--;
+                //runningChildren e atualizado pela captura de SIGCHILD
             }
 
             printChildren(children);
@@ -250,12 +307,20 @@ int main(int argc, char **argv)
                 printf("%s: invalid syntax. Try again.\n", COMMAND_RUN);
                 continue;
             }
-            if (MAXCHILDREN != -1 && runningChildren >= MAXCHILDREN)
+            if (MAXCHILDREN != -1)
             {
-                waitForChild(children);
-                runningChildren--;
+                while (runningChildren >= MAXCHILDREN)
+                {
+                    //runningChildren e atualizado pela captura de SIGCHILD
+                }
             }
 
+            struct sigaction act;
+
+            memset(&act, 0, sizeof(act));
+            act.sa_sigaction = &sigchld_handler;
+            act.sa_flags = SA_RESTART;
+            sigaction(SIGCHLD, &act, 0);
             pid = fork();
             if (pid < 0)
             {
@@ -265,6 +330,18 @@ int main(int argc, char **argv)
 
             if (pid > 0)
             {
+                pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER; //Mutex implementado para prevenir erros com o malloc do readTime caso ocorra o signal sigchild
+                if (pthread_mutex_lock(&mutex) != 0)
+                {
+                    perror("Mutex locking error.");
+                    exit(EXIT_FAILURE);
+                }
+                readTime(startTimes, pid);
+                if (pthread_mutex_unlock(&mutex) != 0)
+                {
+                    perror("Mutex unlocking error.");
+                    exit(EXIT_FAILURE);
+                }
                 runningChildren++;
                 printf("%s: background child started with PID %d.\n\n", COMMAND_RUN, pid);
                 continue;
@@ -309,6 +386,8 @@ int main(int argc, char **argv)
     }
     vector_free(children);
     deleteExistentPipes();
+    freeTime(startTimes);
+    freeTime(stopTimes);
 
     return EXIT_SUCCESS;
 }
