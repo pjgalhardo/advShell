@@ -8,57 +8,97 @@
 
 #define BUFFER_SIZE 100
 
+void clientRequest(int faux, char *filePath)
+{
+    char command[BUFFER_SIZE], completeCommand[BUFFER_SIZE];
+    if (fgets(command, BUFFER_SIZE, stdin) == NULL)
+    {
+        perror("FAILED RECEIVING INPUT FROM STDIN\n");
+        exit(EXIT_FAILURE);
+    }
+    strcpy(completeCommand, filePath);
+    strcat(completeCommand, "\n");
+    strcat(completeCommand, command);
+    if (write(faux, completeCommand, BUFFER_SIZE) == -1)
+    {
+        perror("FAILED WRITING TO FIFO.\n");
+        exit(EXIT_FAILURE);
+    }
+}
+
+void checkNumberOfArguments(int args)
+{
+    if (args != 2)
+    {
+        perror("Wrong number of arguments.\n");
+        exit(EXIT_FAILURE);
+    }
+}
+
+void createClientPipe(char *fileReturn)
+{
+    int i;
+    strcpy(fileReturn, "1.pipe");
+    for (i = 1; access(fileReturn, F_OK) == 0; i++)
+    {
+        sprintf(fileReturn, "%d.pipe", i);
+    }
+
+    if (mkfifo(fileReturn, 0777) < 0)
+    {
+        perror("FAILED CREATING FIFO.\n");
+        exit(EXIT_FAILURE);
+    }
+}
+
+void openFIFO(char *filePath, int *faux, int flag)
+{
+    *faux = open(filePath, flag);
+    if (*faux == -1)
+    {
+        perror("FAILED OPENING FIFO.\n");
+        exit(EXIT_FAILURE);
+    }
+}
+
+void printResult(int faux)
+{
+    char answer[BUFFER_SIZE];
+    if (read(faux, answer, BUFFER_SIZE) == -1)
+    {
+        perror("FAILED READING FIFO.\n");
+        exit(EXIT_FAILURE);
+    }
+    printf("%s", answer);
+}
+
+void closeFIFO(int faux)
+{
+    if (close(faux) == -1)
+    {
+        perror("FAILED CLOSING FIFO\n");
+        exit(EXIT_FAILURE);
+    }
+}
+
 int main(int argc, char *argv[])
 {
 
-    int fclient, i, fAnswer;
-    if (argc != 2)
+    int fclient, fAnswer;
+    char filePath[BUFFER_SIZE], fileReturn[BUFFER_SIZE];
+
+    strcpy(filePath, argv[1]);
+    createClientPipe(fileReturn);
+    while (1)
     {
-        perror("Wrong number of arguments.\n");
-        exit(-1);
-    }
-    else
-    {
-        char *filePath = (char *)malloc(sizeof(char) * BUFFER_SIZE);
-        strcpy(filePath, argv[1]);
-        strcat(filePath, ".pipe");
-        //ver tamanho do fileReturn: tou a por um tamanho fixo mas se calhar devia fazer malloc
-        char fileReturn[BUFFER_SIZE];
-        char answer[BUFFER_SIZE];
-        strcpy(fileReturn, "1.pipe");
-        for (i = 1; access(fileReturn, F_OK) == 0; i++)
-        {
-            sprintf(fileReturn, "%d.pipe", i);
-        }
-        mkfifo(fileReturn, 0777);
-
-        char *command = (char *)malloc(sizeof(char) * BUFFER_SIZE);
-        char *completeCommand = (char *)malloc(sizeof(char) * BUFFER_SIZE);
-        while (1)
-        {
-            fclient = open(filePath, O_WRONLY);
-            if (fclient == -1)
-            {
-                perror("FAILED CREATING FIFO.\n");
-            }
-
-            fgets(command, BUFFER_SIZE, stdin);
-            strcpy(completeCommand, fileReturn);
-            strcat(completeCommand, "\n");
-            strcat(completeCommand, command);
-            write(fclient, completeCommand, BUFFER_SIZE);
-            close(fclient);
-            fAnswer = open(fileReturn, O_RDONLY);
-            read(fAnswer, answer, BUFFER_SIZE);
-            printf("%s", answer);
-            close(fAnswer);
-        }
-
-        //end of program
-        free(completeCommand);
-        free(command);
-        free(filePath);
+        openFIFO(filePath, &fclient, O_WRONLY);
+        clientRequest(fclient, fileReturn);
+        closeFIFO(fclient);
+        openFIFO(fileReturn, &fAnswer, O_RDONLY);
+        printResult(fAnswer);
+        closeFIFO(fAnswer);
     }
 
+    //end of program
     return 0;
 }

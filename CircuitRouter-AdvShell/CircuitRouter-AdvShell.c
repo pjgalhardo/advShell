@@ -20,6 +20,7 @@
 #include <sys/stat.h>
 #include <sys/select.h>
 #include <sys/time.h>
+#include "lib/utility.h"
 
 #define COMMAND_EXIT "exit"
 #define COMMAND_RUN "run"
@@ -33,6 +34,25 @@ int clientRequest(char *buffer)
     return !(strcmp(buffer, "") == 0);
 }
 
+void writeToFIFO(char *path, char *buffer, int size)
+{
+    int faux;
+    if (((faux = open(path, O_WRONLY)) == -1))
+    {
+        exit(-1);
+    }
+    if (write(faux, buffer, size) == -1)
+    {
+        perror("FAILED WRITING TO FIFO.\n");
+        exit(EXIT_FAILURE);
+    }
+    if (close(faux) == -1)
+    {
+        perror("FAILED CLOSING FIFO.\n");
+        exit(EXIT_FAILURE);
+    }
+}
+
 void deleteExistentPipes()
 {
     //FIXME: nao sei se gosto de como esta
@@ -41,7 +61,11 @@ void deleteExistentPipes()
     strcpy(fileReturn, "1.pipe");
     for (i = 2; access(fileReturn, F_OK) != -1; i++)
     {
-        remove(fileReturn);
+        if (unlink(fileReturn) == -1)
+        {
+            perror("FAILED UNLINKING FILE.\n");
+            exit(EXIT_FAILURE);
+        }
         sprintf(fileReturn, "%d.pipe", i);
     }
 }
@@ -97,17 +121,51 @@ void printChildren(vector_t *children)
     puts("END.");
 }
 
-int main(int argc, char **argv)
+void openFIFO(char *filePath, char *arg, int *fserv)
 {
 
+    char *faux = (char *)malloc(sizeof(char) * BUFFER_SIZE);
+    strcpy(faux, arg);
+    strcat(faux, ".pipe");
+    faux += 2;
+    strcpy(filePath, faux);
+    faux -= 2;
+    free(faux);
+    unlink(filePath);
+
+    if (mkfifo(filePath, 0777) < 0)
+    {
+        exit(-1);
+    }
+
+    if (((*fserv = open(filePath, O_RDWR)) == -1))
+    {
+        exit(-1);
+    }
+}
+
+void resetFlags(int fdFIFO, fd_set *readfds)
+{
+    FD_ZERO(readfds);
+    FD_SET(fdFIFO, readfds);
+    FD_SET(fileno(stdin), readfds);
+}
+
+int clientFlag(int faux, fd_set *readfds)
+{
+    return FD_ISSET(faux, readfds);
+}
+
+int main(int argc, char **argv)
+{
+    char fServPath[BUFFER_SIZE];
     char *args[MAXARGS + 1];
     char bufferClient[BUFFER_SIZE], bufferShell[BUFFER_SIZE], clientPipe[BUFFER_SIZE];
     int MAXCHILDREN = -1;
     vector_t *children;
     int runningChildren = 0;
-    int fserv, sret, j, i, fanswer;
+    int fserv, selectRet, j, i;
     fd_set readfds;
-    fd_set s_rd;
     struct timeval timeout;
 
     if (argv[1] != NULL)
@@ -120,60 +178,37 @@ int main(int argc, char **argv)
     printf("Welcome to CircuitRouter-AdvShell\n\n");
 
     /*  CRIACAO DO FIFO   */
-
-    char *fServPath = (char *)malloc(sizeof(char) * BUFFER_SIZE);
-    strcpy(fServPath, argv[0]);
-    strcat(fServPath, ".pipe");
-    fServPath += 2;
-    unlink(fServPath);
-
-    if (mkfifo(fServPath, 0777) < 0)
-    {
-        exit(-1);
-    }
-
-    if (((fserv = open(fServPath, O_RDWR)) == -1))
-    {
-        exit(-1);
-    }
+    openFIFO(fServPath, argv[0], &fserv);
 
     while (1)
     {
-        sret = 0;
+        selectRet = 0;
         memset(bufferClient, 0, sizeof(bufferClient));
         memset(bufferShell, 0, sizeof(bufferShell));
 
-        while (sret == 0)
+        while (selectRet == 0)
         {
-            FD_ZERO(&readfds);
-            FD_SET(fserv, &readfds);
-            FD_ZERO(&s_rd);
-            FD_SET(fileno(stdin), &s_rd);
-            timeout.tv_sec = 0;
-            timeout.tv_usec = 100000;
-            if ((sret = select(8, &readfds, NULL, NULL, &timeout)) == 1)
+            resetFlags(fserv, &readfds);
+            if ((selectRet = select(MAX(fileno(stdin), fserv) + 1, &readfds, NULL, NULL, NULL)) == 1)
             {
                 //FIXME: fazer numa funcao
-                read(fserv, bufferClient, BUFFER_SIZE);
-                strcpy(clientPipe, "");
-                char tempBuffer[BUFFER_SIZE];
-                for (i = 0; bufferClient[i] != '\n'; i++)
+                if (clientFlag(fserv, &readfds))
                 {
-                    clientPipe[i] = bufferClient[i];
+                    read(fserv, bufferClient, BUFFER_SIZE);
+                    strcpy(clientPipe, "");
+                    char tempBuffer[BUFFER_SIZE];
+                    for (i = 0; bufferClient[i] != '\n'; i++)
+                    {
+                        clientPipe[i] = bufferClient[i];
+                    }
+                    i++;
+                    for (j = 0; i < BUFFER_SIZE; i++, j++)
+                    {
+                        tempBuffer[j] = bufferClient[i];
+                    }
+                    strcpy(bufferClient, tempBuffer);
                 }
-                i++;
-                for (j = 0; i < BUFFER_SIZE; i++, j++)
-                {
-                    tempBuffer[j] = bufferClient[i];
-                }
-                strcpy(bufferClient, tempBuffer);
-            }
-
-            else
-            {
-                timeout.tv_sec = 0;
-                timeout.tv_usec = 100000;
-                if ((sret = select(fileno(stdin) + 1, &s_rd, NULL, NULL, &timeout)) == 1)
+                else
                 {
                     fgets(bufferShell, BUFFER_SIZE, stdin);
                 }
@@ -260,9 +295,7 @@ int main(int argc, char **argv)
         }
         else if (clientRequest(bufferClient))
         {
-            fanswer = open(clientPipe, O_WRONLY);
-            write(fanswer, "Command not supported.\n", BUFFER_SIZE);
-            close(fanswer);
+            writeToFIFO(clientPipe, "Command not supported.\n", BUFFER_SIZE);
         }
         else
             printf("Unknown command. Try again.\n");
@@ -270,9 +303,6 @@ int main(int argc, char **argv)
 
     close(fserv);
     unlink(fServPath);
-    fServPath -= 2;
-    free(fServPath);
-
     for (int i = 0; i < vector_getSize(children); i++)
     {
         free(vector_at(children, i));
