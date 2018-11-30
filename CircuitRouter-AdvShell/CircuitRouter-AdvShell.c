@@ -19,7 +19,6 @@
 #include <errno.h>
 #include <sys/stat.h>
 #include <sys/select.h>
-#include <sys/time.h>
 #include "lib/utility.h"
 
 #define COMMAND_EXIT "exit"
@@ -156,6 +155,30 @@ int clientFlag(int faux, fd_set *readfds)
     return FD_ISSET(faux, readfds);
 }
 
+void readFIFO(int *faux, char *buffer, char *clientPipe)
+{
+    int i, j;
+
+    if (read(*faux, buffer, BUFFER_SIZE) == -1)
+    {
+        perror("FAILED READING FIFO.\n");
+        exit(EXIT_FAILURE);
+    }
+
+    strcpy(clientPipe, "");
+    char tempBuffer[BUFFER_SIZE];
+    for (i = 0; buffer[i] != '\n'; i++)
+    {
+        clientPipe[i] = buffer[i];
+    }
+    i++;
+    for (j = 0; i < BUFFER_SIZE; i++, j++)
+    {
+        tempBuffer[j] = buffer[i];
+    }
+    strcpy(buffer, tempBuffer);
+}
+
 int main(int argc, char **argv)
 {
     char fServPath[BUFFER_SIZE];
@@ -164,9 +187,8 @@ int main(int argc, char **argv)
     int MAXCHILDREN = -1;
     vector_t *children;
     int runningChildren = 0;
-    int fserv, selectRet, j, i;
+    int fserv, selectRet;
     fd_set readfds;
-    struct timeval timeout;
 
     if (argv[1] != NULL)
     {
@@ -194,19 +216,7 @@ int main(int argc, char **argv)
                 //FIXME: fazer numa funcao
                 if (clientFlag(fserv, &readfds))
                 {
-                    read(fserv, bufferClient, BUFFER_SIZE);
-                    strcpy(clientPipe, "");
-                    char tempBuffer[BUFFER_SIZE];
-                    for (i = 0; bufferClient[i] != '\n'; i++)
-                    {
-                        clientPipe[i] = bufferClient[i];
-                    }
-                    i++;
-                    for (j = 0; i < BUFFER_SIZE; i++, j++)
-                    {
-                        tempBuffer[j] = bufferClient[i];
-                    }
-                    strcpy(bufferClient, tempBuffer);
+                    readFIFO(&fserv, bufferClient, clientPipe);
                 }
                 else
                 {

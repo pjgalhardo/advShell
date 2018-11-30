@@ -15,5 +15,9 @@ void printChildren(vector_t *children);
 void deleteExistentPipes();
 void writeToFIFO(char *path, char *buffer, int size);
 int clientRequest(char *buffer);
+void openFIFO(char *filePath, char *arg, int *fserv);
+void resetFlags(int fdFIFO, fd_set *readfds);
+int clientFlag(int faux, fd_set *readfds);
+void readFIFO(int *faux, char *buffer, char *clientPipe);
 
 #endif /* CIRCUITROUTER_SHELL_H */
