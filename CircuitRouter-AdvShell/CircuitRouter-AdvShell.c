@@ -1,9 +1,3 @@
-
-/*
-// Projeto SO - exercise 1, version 1
-// Sistemas Operativos, DEI/IST/ULisboa 2018-19
-*/
-
 #include "lib/commandlinereader.h"
 #include "lib/vector.h"
 #include "CircuitRouter-AdvShell.h"
@@ -16,6 +10,7 @@
 #include <signal.h>
 #include <limits.h>
 #include <unistd.h>
+#include <stdbool.h>
 #include <errno.h>
 #include <sys/stat.h>
 #include <sys/select.h>
@@ -33,6 +28,7 @@ vector_t *startTimes;
 vector_t *children;
 
 int runningChildren = 0;
+bool waiting = FALSE;
 
 struct timestruct
 {
@@ -42,7 +38,6 @@ struct timestruct
 
 void readTime(vector_t *times, pid_t pid)
 {
-
     struct timestruct *timer = malloc(sizeof(struct timestruct));
     TIMER_READ(timer->time);
     timer->pid = pid;
@@ -61,7 +56,6 @@ void freeTime(vector_t *times)
 float printTime(pid_t pid)
 {
     TIMER_T timestarted;
-    int check = 00;
     TIMER_T timestopped;
 
     for (int i = 0; i < vector_getSize(startTimes); ++i)
@@ -70,7 +64,6 @@ float printTime(pid_t pid)
         if (startTime->pid == pid)
         {
             timestarted = startTime->time;
-            check += 10;
         }
     }
     for (int i = 0; i < vector_getSize(stopTimes); ++i)
@@ -79,7 +72,6 @@ float printTime(pid_t pid)
         if (stopTime->pid == pid)
         {
             timestopped = stopTime->time;
-            check += 1;
         }
     }
     return TIMER_DIFF_SECONDS(timestarted, timestopped);
@@ -87,6 +79,7 @@ float printTime(pid_t pid)
 
 void waitForChild(vector_t *children)
 {
+    waiting = TRUE;
     while (1)
     {
         child_t *child = malloc(sizeof(child_t));
@@ -113,6 +106,7 @@ void waitForChild(vector_t *children)
         }
         readTime(stopTimes, child->pid);
         vector_pushBack(children, child);
+        waiting = FALSE;
         return;
     }
 }
@@ -139,8 +133,11 @@ void printChildren(vector_t *children)
 
 void sigchld_handler(int sig, siginfo_t *siginfo, void *x)
 {
-    waitForChild(children);
-    runningChildren--;
+    if (!waiting)
+    {
+        runningChildren--;
+        waitForChild(children);
+    }
 }
 
 int main(int argc, char **argv)
